@@ -50,7 +50,7 @@ Claude Code CLI → Express Server (server.js) → CloudCode Client → Antigrav
 - **src/server.js**: Express server exposing Anthropic-compatible endpoints (`/v1/messages`, `/v1/models`, `/health`, `/accounts`)
 - **src/cloudcode-client.js**: Makes requests to Antigravity Cloud Code API with retry/failover logic, handles both streaming and non-streaming
 - **src/format-converter.js**: Bidirectional conversion between Anthropic and Google Generative AI formats, including thinking blocks and tool calls
-- **src/account-manager.js**: Multi-account pool with round-robin rotation, rate limit handling, and automatic cooldown
+- **src/account-manager.js**: Multi-account pool with sticky selection, rate limit handling, and automatic cooldown
 - **src/oauth.js**: Google OAuth implementation for adding accounts
 - **src/token-extractor.js**: Extracts tokens from local Antigravity app installation (legacy single-account mode)
 - **src/constants.js**: API endpoints, model mappings, OAuth config, and all configuration values

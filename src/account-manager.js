@@ -1,6 +1,6 @@
 /**
  * Account Manager
- * Manages multiple Antigravity accounts with round-robin selection,
+ * Manages multiple Antigravity accounts with sticky selection,
  * automatic failover, and smart cooldown for rate-limited accounts.
  */
 
@@ -199,7 +199,7 @@ export class AccountManager {
     }
 
     /**
-     * Pick the next available account (round-robin).
+     * Pick the next available account (fallback when current is unavailable).
      * Sets activeIndex to the selected account's index.
      * @returns {Object|null} The next available account or null if none available
      */

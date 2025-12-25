@@ -43,7 +43,7 @@ If you have Antigravity installed and logged in, the proxy will automatically ex
 
 **Option B: Add Google Accounts via OAuth (Recommended for Multi-Account)**
 
-Add one or more Google accounts for round-robin load balancing:
+Add one or more Google accounts for load balancing:
 
 ```bash
 npm run accounts:add
