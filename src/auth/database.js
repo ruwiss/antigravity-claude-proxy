@@ -15,6 +15,7 @@ import { createRequire } from 'module';
 import { ANTIGRAVITY_DB_PATH } from '../constants.js';
 import { isModuleVersionError, attemptAutoRebuild, clearRequireCache } from '../utils/native-module-helper.js';
 import { logger } from '../utils/logger.js';
+import { NativeModuleError } from '../errors.js';
 
 const require = createRequire(import.meta.url);
 
@@ -54,18 +55,22 @@ function loadDatabaseModule() {
                     return Database;
                 } catch (retryError) {
                     // Rebuild succeeded but reload failed - user needs to restart
-                    moduleLoadError = new Error(
-                        'Native module rebuild completed. Please restart the server to apply the fix.'
+                    moduleLoadError = new NativeModuleError(
+                        'Native module rebuild completed. Please restart the server to apply the fix.',
+                        true,  // rebuildSucceeded
+                        true   // restartRequired
                     );
                     logger.info('[Database] Rebuild succeeded - server restart required');
                     throw moduleLoadError;
                 }
             } else {
-                moduleLoadError = new Error(
+                moduleLoadError = new NativeModuleError(
                     'Failed to auto-rebuild native module. Please run manually:\n' +
                     '  npm rebuild better-sqlite3\n' +
                     'Or if using npx, find the package location in the error and run:\n' +
-                    '  cd /path/to/better-sqlite3 && npm rebuild'
+                    '  cd /path/to/better-sqlite3 && npm rebuild',
+                    false,  // rebuildSucceeded
+                    false   // restartRequired
                 );
                 throw moduleLoadError;
             }
@@ -122,8 +127,8 @@ export function getAuthStatus(dbPath = ANTIGRAVITY_DB_PATH) {
         if (error.message.includes('No auth status') || error.message.includes('missing apiKey')) {
             throw error;
         }
-        // Check for version mismatch that might have been thrown by loadDatabaseModule
-        if (error.message.includes('restart the server') || error.message.includes('auto-rebuild')) {
+        // Re-throw native module errors from loadDatabaseModule without wrapping
+        if (error instanceof NativeModuleError) {
             throw error;
         }
         throw new Error(`Failed to read Antigravity database: ${error.message}`);
