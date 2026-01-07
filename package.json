@@ -27,7 +27,8 @@
     "test:images": "node tests/test-images.cjs",
     "test:caching": "node tests/test-caching-streaming.cjs",
     "test:crossmodel": "node tests/test-cross-model-thinking.cjs",
-    "test:oauth": "node tests/test-oauth-no-browser.cjs"
+    "test:oauth": "node tests/test-oauth-no-browser.cjs",
+    "model": "node src/cli/model-switch.js"
   },
   "keywords": [
     "claude",

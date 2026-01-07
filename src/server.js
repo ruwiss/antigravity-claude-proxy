@@ -308,17 +308,18 @@ app.get('/account-limits', async (req, res) => {
             lines.push('');
 
             // Table 1: Account status
-            const accColWidth = 25;
-            const statusColWidth = 15;
-            const lastUsedColWidth = 25;
-            const resetColWidth = 25;
+            // Use compact formatting
+            const accColWidth = 20;
+            const statusColWidth = 12;
+            const lastUsedColWidth = 22;
+            const resetColWidth = 22;
 
             let accHeader = 'Account'.padEnd(accColWidth) + 'Status'.padEnd(statusColWidth) + 'Last Used'.padEnd(lastUsedColWidth) + 'Quota Reset';
             lines.push(accHeader);
             lines.push('─'.repeat(accColWidth + statusColWidth + lastUsedColWidth + resetColWidth));
 
             for (const acc of status.accounts) {
-                const shortEmail = acc.email.split('@')[0].slice(0, 22);
+                const shortEmail = acc.email.split('@')[0].slice(0, 18);
                 const lastUsed = acc.lastUsed ? new Date(acc.lastUsed).toLocaleString() : 'never';
 
                 // Get status and error from accountLimits
@@ -339,7 +340,7 @@ app.get('/account-limits', async (req, res) => {
                     if (exhaustedCount === 0) {
                         accStatus = 'ok';
                     } else {
-                        accStatus = `(${exhaustedCount}/${modelCount}) limited`;
+                        accStatus = `(${exhaustedCount}/${modelCount}) limit`;
                     }
                 }
 
@@ -362,48 +363,60 @@ app.get('/account-limits', async (req, res) => {
             }
             lines.push('');
 
-            // Calculate column widths - need more space for reset time info
-            const modelColWidth = Math.max(28, ...sortedModels.map(m => m.length)) + 2;
-            const accountColWidth = 30;
+            // Calculate column widths - Compact mode
+            const modelColWidth = Math.max(25, ...sortedModels.map(m => m.length)) + 2;
+            const accountColWidth = 18; // Reduced from 30 to fit more accounts
+            const ACCOUNTS_PER_ROW = 5; // Chunk accounts to avoid horizontal scroll
 
-            // Header row
-            let header = 'Model'.padEnd(modelColWidth);
-            for (const acc of accountLimits) {
-                const shortEmail = acc.email.split('@')[0].slice(0, 26);
-                header += shortEmail.padEnd(accountColWidth);
-            }
-            lines.push(header);
-            lines.push('─'.repeat(modelColWidth + accountLimits.length * accountColWidth));
+            // Process accounts in chunks
+            for (let i = 0; i < accountLimits.length; i += ACCOUNTS_PER_ROW) {
+                const chunk = accountLimits.slice(i, i + ACCOUNTS_PER_ROW);
 
-            // Data rows
-            for (const modelId of sortedModels) {
-                let row = modelId.padEnd(modelColWidth);
-                for (const acc of accountLimits) {
-                    const quota = acc.models?.[modelId];
-                    let cell;
-                    if (acc.status !== 'ok' && acc.status !== 'rate-limited') {
-                        cell = `[${acc.status}]`;
-                    } else if (!quota) {
-                        cell = '-';
-                    } else if (quota.remainingFraction === 0 || quota.remainingFraction === null) {
-                        // Show reset time for exhausted models
-                        if (quota.resetTime) {
-                            const resetMs = new Date(quota.resetTime).getTime() - Date.now();
-                            if (resetMs > 0) {
-                                cell = `0% (wait ${formatDuration(resetMs)})`;
+                // Add spacing between chunks
+                if (i > 0) {
+                    lines.push('');
+                    lines.push('');
+                }
+
+                // Header row for this chunk
+                let header = 'Model'.padEnd(modelColWidth);
+                for (const acc of chunk) {
+                    const shortEmail = acc.email.split('@')[0].slice(0, 15); // Truncate longer
+                    header += shortEmail.padEnd(accountColWidth);
+                }
+                lines.push(header);
+                lines.push('─'.repeat(modelColWidth + chunk.length * accountColWidth));
+
+                // Data rows for this chunk
+                for (const modelId of sortedModels) {
+                    let row = modelId.padEnd(modelColWidth);
+                    for (const acc of chunk) {
+                        const quota = acc.models?.[modelId];
+                        let cell;
+                        if (acc.status !== 'ok' && acc.status !== 'rate-limited') {
+                            cell = `[${acc.status}]`;
+                        } else if (!quota) {
+                            cell = '-';
+                        } else if (quota.remainingFraction === 0 || quota.remainingFraction === null) {
+                            // Show reset time for exhausted models
+                            if (quota.resetTime) {
+                                const resetMs = new Date(quota.resetTime).getTime() - Date.now();
+                                if (resetMs > 0) {
+                                    cell = `0% (${formatDuration(resetMs)})`; // More compact wait time
+                                } else {
+                                    cell = '0% (reset)';
+                                }
                             } else {
-                                cell = '0% (resetting...)';
+                                cell = '0%';
                             }
                         } else {
-                            cell = '0% (exhausted)';
+                            const pct = Math.round(quota.remainingFraction * 100);
+                            cell = `${pct}%`;
                         }
-                    } else {
-                        const pct = Math.round(quota.remainingFraction * 100);
-                        cell = `${pct}%`;
+                        row += cell.padEnd(accountColWidth);
                     }
-                    row += cell.padEnd(accountColWidth);
+                    lines.push(row);
                 }
-                lines.push(row);
             }
 
             return res.send(lines.join('\n'));

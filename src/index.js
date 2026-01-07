@@ -8,6 +8,8 @@ import { DEFAULT_PORT } from './constants.js';
 import { logger } from './utils/logger.js';
 import path from 'path';
 import os from 'os';
+import http from 'http';
+import readline from 'readline';
 
 // Parse command line arguments
 const args = process.argv.slice(2);
@@ -34,6 +36,59 @@ const PORT = process.env.PORT || DEFAULT_PORT;
 const HOME_DIR = os.homedir();
 const CONFIG_DIR = path.join(HOME_DIR, '.antigravity-claude-proxy');
 
+/**
+ * Fetch and display account limits table
+ */
+function fetchAccountLimits(port) {
+    return new Promise((resolve, reject) => {
+        const req = http.get(`http://localhost:${port}/account-limits?format=table`, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                console.log('\n' + data);
+                resolve();
+            });
+        });
+        req.on('error', (err) => {
+            logger.error(`Failed to fetch account limits: ${err.message}`);
+            reject(err);
+        });
+        req.setTimeout(5000, () => {
+            req.destroy();
+            logger.error('Request timeout while fetching account limits');
+            reject(new Error('Timeout'));
+        });
+    });
+}
+
+/**
+ * Setup keyboard listener for hotkeys
+ */
+function setupKeyboardListener(port) {
+    // Only setup if stdin is a TTY
+    if (!process.stdin.isTTY) {
+        return;
+    }
+
+    // Configure readline to handle keypress events
+    readline.emitKeypressEvents(process.stdin);
+    process.stdin.setRawMode(true);
+
+    logger.info('Press F2 to display account quotas');
+
+    process.stdin.on('keypress', async (str, key) => {
+        // Ctrl+C to exit
+        if (key.ctrl && key.name === 'c') {
+            process.exit();
+        }
+
+        // F2 key
+        if (key.name === 'f2') {
+            await fetchAccountLimits(port);
+        }
+    });
+}
+
 app.listen(PORT, () => {
     // Clear console for a clean start
     console.clear();
@@ -51,7 +106,8 @@ app.listen(PORT, () => {
     if (!isFallbackEnabled) {
         controlSection += '║    --fallback         Enable model fallback on quota exhaust ║\n';
     }
-    controlSection += '║    Ctrl+C             Stop server                            ║';
+    controlSection += '║    Ctrl+C             Stop server                            ║\n';
+    controlSection += '║    F2                  Show account quotas                    ║';
 
     // Build status section if any modes are active
     let statusSection = '';
@@ -104,4 +160,7 @@ ${border}    ${align4(`export ANTHROPIC_BASE_URL=http://localhost:${PORT}`)}${bo
     if (isDebug) {
         logger.warn('Running in DEBUG mode - verbose logs enabled');
     }
+
+    // Setup keyboard listener for F2
+    setupKeyboardListener(PORT);
 });
