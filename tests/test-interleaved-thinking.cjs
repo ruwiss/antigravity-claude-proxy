@@ -106,7 +106,7 @@ Please do this step by step, reading each file before modifying.`
             messages: [
                 {
                     role: 'user',
-                    content: `Read src/config.js and tell me if debug mode is enabled.`
+                    content: `Analyze the src/config.js file structure and explain the security implications of each setting. What are the potential risks if this config were exposed in production?`
                 },
                 { role: 'assistant', content: result.content },
                 {

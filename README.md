@@ -39,10 +39,10 @@ A proxy server that exposes an **Anthropic-compatible API** backed by **Antigrav
 
 ```bash
 # Run directly with npx (no install needed)
-npx antigravity-claude-proxy start
+npx antigravity-claude-proxy@latest start
 
 # Or install globally
-npm install -g antigravity-claude-proxy
+npm install -g antigravity-claude-proxy@latest
 antigravity-claude-proxy start
 ```
 
@@ -78,7 +78,7 @@ Add one or more Google accounts for load balancing.
 antigravity-claude-proxy accounts add
 
 # If using npx
-npx antigravity-claude-proxy accounts add
+npx antigravity-claude-proxy@latest accounts add
 
 # If cloned locally
 npm run accounts:add
@@ -93,7 +93,7 @@ This opens your browser for Google OAuth. Sign in and authorize access. Repeat f
 antigravity-claude-proxy accounts add --no-browser
 
 # If using npx
-npx antigravity-claude-proxy accounts add -- --no-browser
+npx antigravity-claude-proxy@latest accounts add -- --no-browser
 
 # If cloned locally
 npm run accounts:add -- --no-browser
@@ -121,7 +121,7 @@ antigravity-claude-proxy accounts
 antigravity-claude-proxy start
 
 # If using npx
-npx antigravity-claude-proxy start
+npx antigravity-claude-proxy@latest start
 
 # If cloned locally
 npm start
@@ -161,8 +161,9 @@ Add this configuration:
     "ANTHROPIC_MODEL": "claude-opus-4-5-thinking",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-5-thinking",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-5-thinking",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gemini-2.5-flash-lite",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "claude-sonnet-4-5-thinking"
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gemini-2.5-flash-lite[1m]",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "claude-sonnet-4-5-thinking",
+    "ENABLE_EXPERIMENTAL_MCP_CLI": "true"
   }
 }
 ```
@@ -176,11 +177,12 @@ Or to use Gemini models:
   "env": {
     "ANTHROPIC_AUTH_TOKEN": "test",
     "ANTHROPIC_BASE_URL": "http://localhost:8080",
-    "ANTHROPIC_MODEL": "gemini-3-pro-high",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "gemini-3-pro-high",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "gemini-3-flash",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gemini-2.5-flash-lite",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "gemini-3-flash"
+    "ANTHROPIC_MODEL": "gemini-3-pro-high[1m]",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "gemini-3-pro-high[1m]",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "gemini-3-flash[1m]",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gemini-2.5-flash-lite[1m]",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "gemini-3-flash[1m]",
+    "ENABLE_EXPERIMENTAL_MCP_CLI": "true"
   }
 }
 ```
@@ -193,7 +195,7 @@ Add the proxy settings to your shell profile:
 
 ```bash
 echo 'export ANTHROPIC_BASE_URL="http://localhost:8080"' >> ~/.zshrc
-echo 'export ANTHROPIC_API_KEY="test"' >> ~/.zshrc
+echo 'export ANTHROPIC_AUTH_TOKEN="test"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
@@ -203,7 +205,7 @@ source ~/.zshrc
 
 ```powershell
 Add-Content $PROFILE "`n`$env:ANTHROPIC_BASE_URL = 'http://localhost:8080'"
-Add-Content $PROFILE "`$env:ANTHROPIC_API_KEY = 'test'"
+Add-Content $PROFILE "`$env:ANTHROPIC_AUTH_TOKEN = 'test'"
 . $PROFILE
 ```
 
@@ -211,7 +213,7 @@ Add-Content $PROFILE "`$env:ANTHROPIC_API_KEY = 'test'"
 
 ```cmd
 setx ANTHROPIC_BASE_URL "http://localhost:8080"
-setx ANTHROPIC_API_KEY "test"
+setx ANTHROPIC_AUTH_TOKEN "test"
 ```
 
 Restart your terminal for changes to take effect.
