@@ -100,10 +100,10 @@ document.addEventListener('alpine:init', () => {
                 clearInterval(this.healthCheckTimer);
             }
 
-            // Setup visibility change listener
+            // Setup visibility change listener (only once)
             if (!this._healthVisibilitySetup) {
                 this._healthVisibilitySetup = true;
-                document.addEventListener('visibilitychange', () => {
+                this._visibilityHandler = () => {
                     if (document.hidden) {
                         // Tab hidden - stop health checks
                         this.stopHealthCheck();
@@ -111,7 +111,8 @@ document.addEventListener('alpine:init', () => {
                         // Tab visible - restart health checks
                         this.startHealthCheck();
                     }
-                });
+                };
+                document.addEventListener('visibilitychange', this._visibilityHandler);
             }
 
             // Perform immediate health check
@@ -271,6 +272,9 @@ document.addEventListener('alpine:init', () => {
 
         destroy() {
             this.stopHealthCheck();
+            if (this._visibilityHandler) {
+                document.removeEventListener('visibilitychange', this._visibilityHandler);
+            }
         }
     });
 });
