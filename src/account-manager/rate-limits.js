@@ -22,6 +22,7 @@ export function isAllRateLimited(accounts, modelId) {
 
     return accounts.every(acc => {
         if (acc.isInvalid) return true; // Invalid accounts count as unavailable
+        if (acc.enabled === false) return true; // Disabled accounts count as unavailable
         const modelLimits = acc.modelRateLimits || {};
         const limit = modelLimits[modelId];
         return limit && limit.isRateLimited && limit.resetTime > Date.now();
@@ -38,6 +39,9 @@ export function isAllRateLimited(accounts, modelId) {
 export function getAvailableAccounts(accounts, modelId = null) {
     return accounts.filter(acc => {
         if (acc.isInvalid) return false;
+
+        // WebUI: Skip disabled accounts
+        if (acc.enabled === false) return false;
 
         if (modelId && acc.modelRateLimits && acc.modelRateLimits[modelId]) {
             const limit = acc.modelRateLimits[modelId];
@@ -107,17 +111,17 @@ export function resetAllRateLimits(accounts) {
  *
  * @param {Array} accounts - Array of account objects
  * @param {string} email - Email of the account to mark
- * @param {number|null} resetMs - Time in ms until rate limit resets
- * @param {Object} settings - Settings object with cooldownDurationMs
+ * @param {number|null} resetMs - Time in ms until rate limit resets (from API)
  * @param {string} modelId - Model ID to mark rate limit for
  * @returns {boolean} True if account was found and marked
  */
-export function markRateLimited(accounts, email, resetMs = null, settings = {}, modelId) {
+export function markRateLimited(accounts, email, resetMs = null, modelId) {
     const account = accounts.find(a => a.email === email);
     if (!account) return false;
 
-    const cooldownMs = resetMs || settings.cooldownDurationMs || DEFAULT_COOLDOWN_MS;
-    const resetTime = Date.now() + cooldownMs;
+    // Store the ACTUAL reset time from the API
+    // This is used to decide whether to wait (short) or switch accounts (long)
+    const actualResetMs = (resetMs && resetMs > 0) ? resetMs : DEFAULT_COOLDOWN_MS;
 
     if (!account.modelRateLimits) {
         account.modelRateLimits = {};
@@ -125,12 +129,20 @@ export function markRateLimited(accounts, email, resetMs = null, settings = {}, 
 
     account.modelRateLimits[modelId] = {
         isRateLimited: true,
-        resetTime: resetTime
+        resetTime: Date.now() + actualResetMs,  // Actual reset time for decisions
+        actualResetMs: actualResetMs             // Original duration from API
     };
 
-    logger.warn(
-        `[AccountManager] Rate limited: ${email} (model: ${modelId}). Available in ${formatDuration(cooldownMs)}`
-    );
+    // Log appropriately based on duration
+    if (actualResetMs > DEFAULT_COOLDOWN_MS) {
+        logger.warn(
+            `[AccountManager] Quota exhausted: ${email} (model: ${modelId}). Resets in ${formatDuration(actualResetMs)}`
+        );
+    } else {
+        logger.warn(
+            `[AccountManager] Rate limited: ${email} (model: ${modelId}). Available in ${formatDuration(actualResetMs)}`
+        );
+    }
 
     return true;
 }
@@ -196,4 +208,30 @@ export function getMinWaitTimeMs(accounts, modelId) {
     }
 
     return minWait === Infinity ? DEFAULT_COOLDOWN_MS : minWait;
+}
+
+/**
+ * Get the rate limit info for a specific account and model
+ * Returns the actual reset time from API, not capped
+ *
+ * @param {Array} accounts - Array of account objects
+ * @param {string} email - Email of the account
+ * @param {string} modelId - Model ID to check
+ * @returns {{isRateLimited: boolean, actualResetMs: number|null, waitMs: number}} Rate limit info
+ */
+export function getRateLimitInfo(accounts, email, modelId) {
+    const account = accounts.find(a => a.email === email);
+    if (!account || !account.modelRateLimits || !account.modelRateLimits[modelId]) {
+        return { isRateLimited: false, actualResetMs: null, waitMs: 0 };
+    }
+
+    const limit = account.modelRateLimits[modelId];
+    const now = Date.now();
+    const waitMs = limit.resetTime ? Math.max(0, limit.resetTime - now) : 0;
+
+    return {
+        isRateLimited: limit.isRateLimited && waitMs > 0,
+        actualResetMs: limit.actualResetMs || null,
+        waitMs
+    };
 }

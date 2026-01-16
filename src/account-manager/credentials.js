@@ -7,14 +7,15 @@
 import {
     ANTIGRAVITY_DB_PATH,
     TOKEN_REFRESH_INTERVAL_MS,
-    ANTIGRAVITY_ENDPOINT_FALLBACKS,
-    ANTIGRAVITY_HEADERS,
+    LOAD_CODE_ASSIST_ENDPOINTS,
+    LOAD_CODE_ASSIST_HEADERS,
     DEFAULT_PROJECT_ID
 } from '../constants.js';
 import { refreshAccessToken } from '../auth/oauth.js';
 import { getAuthStatus } from '../auth/database.js';
 import { logger } from '../utils/logger.js';
 import { isNetworkError } from '../utils/helpers.js';
+import { onboardUser, getDefaultTierId } from './onboarding.js';
 
 /**
  * Get OAuth token for an account
@@ -113,31 +114,41 @@ export async function getProjectForAccount(account, token, projectCache) {
  * @returns {Promise<string>} Project ID
  */
 export async function discoverProject(token) {
-    for (const endpoint of ANTIGRAVITY_ENDPOINT_FALLBACKS) {
+    let lastError = null;
+    let gotSuccessfulResponse = false;
+    let loadCodeAssistData = null;
+
+    for (const endpoint of LOAD_CODE_ASSIST_ENDPOINTS) {
         try {
             const response = await fetch(`${endpoint}/v1internal:loadCodeAssist`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json',
-                    ...ANTIGRAVITY_HEADERS
+                    ...LOAD_CODE_ASSIST_HEADERS
                 },
                 body: JSON.stringify({
                     metadata: {
                         ideType: 'IDE_UNSPECIFIED',
                         platform: 'PLATFORM_UNSPECIFIED',
-                        pluginType: 'GEMINI'
+                        pluginType: 'GEMINI',
+                        duetProject: DEFAULT_PROJECT_ID
                     }
                 })
             });
 
             if (!response.ok) {
                 const errorText = await response.text();
-                logger.warn(`[AccountManager] Project discovery failed at ${endpoint}: ${response.status} - ${errorText}`);
+                lastError = `${response.status} - ${errorText}`;
+                logger.debug(`[AccountManager] loadCodeAssist failed at ${endpoint}: ${lastError}`);
                 continue;
             }
 
             const data = await response.json();
+            gotSuccessfulResponse = true;
+            loadCodeAssistData = data;
+
+            logger.debug(`[AccountManager] loadCodeAssist response from ${endpoint}:`, JSON.stringify(data));
 
             if (typeof data.cloudaicompanionProject === 'string') {
                 logger.success(`[AccountManager] Discovered project: ${data.cloudaicompanionProject}`);
@@ -147,13 +158,59 @@ export async function discoverProject(token) {
                 logger.success(`[AccountManager] Discovered project: ${data.cloudaicompanionProject.id}`);
                 return data.cloudaicompanionProject.id;
             }
+
+            // No project found - log tier data and try to onboard the user
+            logger.info(`[AccountManager] No project in loadCodeAssist response, attempting onboardUser...`);
+            logger.debug(`[AccountManager] Tier data for onboarding: paidTier=${JSON.stringify(data.paidTier)}, currentTier=${JSON.stringify(data.currentTier)}, allowedTiers=${JSON.stringify(data.allowedTiers?.map(t => ({ id: t?.id, isDefault: t?.isDefault })))}`);
+            break;
         } catch (error) {
-            logger.warn(`[AccountManager] Project discovery failed at ${endpoint}:`, error.message);
+            lastError = error.message;
+            logger.debug(`[AccountManager] loadCodeAssist error at ${endpoint}:`, error.message);
         }
     }
 
-    logger.warn(`[AccountManager] Project discovery failed for all endpoints. Using default project: ${DEFAULT_PROJECT_ID}`);
-    logger.warn(`[AccountManager] If you see 404 errors, your account may not have Gemini Code Assist enabled.`);
+    // If we got a successful response but no project, try onboarding
+    if (gotSuccessfulResponse && loadCodeAssistData) {
+        // Priority: paidTier > currentTier > allowedTiers (consistent with model-api.js)
+        let tierId = null;
+        let tierSource = null;
+
+        if (loadCodeAssistData.paidTier?.id) {
+            tierId = loadCodeAssistData.paidTier.id;
+            tierSource = 'paidTier';
+        } else if (loadCodeAssistData.currentTier?.id) {
+            tierId = loadCodeAssistData.currentTier.id;
+            tierSource = 'currentTier';
+        } else {
+            tierId = getDefaultTierId(loadCodeAssistData.allowedTiers);
+            tierSource = 'allowedTiers';
+        }
+
+        tierId = tierId || 'free-tier';
+        logger.info(`[AccountManager] Onboarding user with tier: ${tierId} (source: ${tierSource})`);
+
+        // Check if this is a free tier (raw API values contain 'free')
+        const isFree = tierId.toLowerCase().includes('free');
+
+        // For non-free tiers, pass DEFAULT_PROJECT_ID as the GCP project
+        // The API requires a project for paid tier onboarding
+        const onboardedProject = await onboardUser(
+            token,
+            tierId,
+            isFree ? null : DEFAULT_PROJECT_ID
+        );
+        if (onboardedProject) {
+            logger.success(`[AccountManager] Successfully onboarded, project: ${onboardedProject}`);
+            return onboardedProject;
+        }
+
+        logger.warn(`[AccountManager] Onboarding failed, using default project: ${DEFAULT_PROJECT_ID}`);
+    }
+
+    // Only warn if all endpoints failed with errors (not just missing project)
+    if (!gotSuccessfulResponse) {
+        logger.warn(`[AccountManager] loadCodeAssist failed for all endpoints: ${lastError}`);
+    }
     return DEFAULT_PROJECT_ID;
 }
 

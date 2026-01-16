@@ -14,7 +14,8 @@ import {
     resetAllRateLimits as resetLimits,
     markRateLimited as markLimited,
     markInvalid as markAccountInvalid,
-    getMinWaitTimeMs as getMinWait
+    getMinWaitTimeMs as getMinWait,
+    getRateLimitInfo as getLimitInfo
 } from './rate-limits.js';
 import {
     getTokenForAccount as fetchToken,
@@ -69,6 +70,16 @@ export class AccountManager {
         this.clearExpiredLimits();
 
         this.#initialized = true;
+    }
+
+    /**
+     * Reload accounts from disk (force re-initialization)
+     * Useful when accounts.json is modified externally (e.g., by WebUI)
+     */
+    async reload() {
+        this.#initialized = false;
+        await this.initialize();
+        logger.info('[AccountManager] Accounts reloaded from disk');
     }
 
     /**
@@ -181,7 +192,7 @@ export class AccountManager {
      * @param {string} [modelId] - Optional model ID to mark specific limit
      */
     markRateLimited(email, resetMs = null, modelId = null) {
-        markLimited(this.#accounts, email, resetMs, this.#settings, modelId);
+        markLimited(this.#accounts, email, resetMs, modelId);
         this.saveToDisk();
     }
 
@@ -202,6 +213,16 @@ export class AccountManager {
      */
     getMinWaitTimeMs(modelId = null) {
         return getMinWait(this.#accounts, modelId);
+    }
+
+    /**
+     * Get rate limit info for a specific account and model
+     * @param {string} email - Email of the account
+     * @param {string} modelId - Model ID to check
+     * @returns {{isRateLimited: boolean, actualResetMs: number|null, waitMs: number}} Rate limit info
+     */
+    getRateLimitInfo(email, modelId) {
+        return getLimitInfo(this.#accounts, email, modelId);
     }
 
     /**
@@ -278,6 +299,8 @@ export class AccountManager {
             accounts: this.#accounts.map(a => ({
                 email: a.email,
                 source: a.source,
+                enabled: a.enabled !== false,  // Default to true if undefined
+                projectId: a.projectId || null,
                 modelRateLimits: a.modelRateLimits || {},
                 isInvalid: a.isInvalid || false,
                 invalidReason: a.invalidReason || null,

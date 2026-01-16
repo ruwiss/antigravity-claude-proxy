@@ -112,3 +112,11 @@ export function getCachedSignatureFamily(signature) {
 export function getThinkingCacheSize() {
     return thinkingSignatureCache.size;
 }
+
+/**
+ * Clear all entries from the thinking signature cache.
+ * Used for testing cold cache scenarios.
+ */
+export function clearThinkingSignatureCache() {
+    thinkingSignatureCache.clear();
+}

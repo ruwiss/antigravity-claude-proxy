@@ -11,7 +11,7 @@ The proxy translates requests from Anthropic Messages API format → Google Gene
 ## Commands
 
 ```bash
-# Install dependencies
+# Install dependencies (automatically builds CSS via prepare hook)
 npm install
 
 # Start server (runs on port 8080)
@@ -23,8 +23,13 @@ npm start -- --fallback
 # Start with debug logging
 npm start -- --debug
 
-# Start with file watching for development
-npm run dev
+# Development mode (file watching)
+npm run dev              # Watch server files only
+npm run dev:full         # Watch both CSS and server files (recommended for frontend dev)
+
+# CSS build commands
+npm run build:css        # Build CSS once (minified)
+npm run watch:css        # Watch CSS files for changes
 
 # Account management
 npm run accounts         # Interactive account management
@@ -87,6 +92,12 @@ src/
 │   ├── token-extractor.js      # Legacy token extraction from DB
 │   └── database.js             # SQLite database access
 │
+├── webui/                      # Web Management Interface
+│   └── index.js                # Express router and API endpoints
+│
+├── modules/                    # Feature modules
+│   └── usage-stats.js          # Request tracking and history persistence
+│
 ├── cli/                        # CLI tools
 │   └── accounts.js             # Account management CLI
 │
@@ -105,14 +116,57 @@ src/
     └── native-module-helper.js # Auto-rebuild for native modules
 ```
 
+**Frontend Structure (public/):**
+
+```
+public/
+├── index.html                  # Main entry point
+├── css/
+│   ├── style.css               # Compiled Tailwind CSS (generated, do not edit)
+│   └── src/
+│       └── input.css           # Tailwind source with @apply directives
+├── js/
+│   ├── app.js                  # Main application logic (Alpine.js)
+│   ├── config/                 # Application configuration
+│   │   └── constants.js        # Centralized UI constants and limits
+│   ├── store.js                # Global state management
+│   ├── data-store.js           # Shared data store (accounts, models, quotas)
+│   ├── settings-store.js       # Settings management store
+│   ├── components/             # UI Components
+│   │   ├── dashboard.js        # Main dashboard orchestrator
+│   │   ├── account-manager.js  # Account list & OAuth handling
+│   │   ├── logs-viewer.js      # Live log streaming
+│   │   ├── claude-config.js    # CLI settings editor
+│   │   ├── model-manager.js    # Model configuration UI
+│   │   ├── server-config.js    # Server settings UI
+│   │   └── dashboard/          # Dashboard sub-modules
+│   │       ├── stats.js        # Account statistics calculation
+│   │       ├── charts.js       # Chart.js visualizations
+│   │       └── filters.js      # Chart filter state management
+│   └── utils/                  # Frontend utilities
+│       ├── error-handler.js    # Centralized error handling with ErrorHandler.withLoading
+│       ├── account-actions.js  # Account operations service layer (NEW)
+│       ├── validators.js       # Input validation
+│       └── model-config.js     # Model configuration helpers
+└── views/                      # HTML partials (loaded dynamically)
+    ├── dashboard.html
+    ├── accounts.html
+    ├── models.html
+    ├── settings.html
+    └── logs.html
+```
+
 **Key Modules:**
 
-- **src/server.js**: Express server exposing Anthropic-compatible endpoints (`/v1/messages`, `/v1/models`, `/health`, `/account-limits`)
+- **src/server.js**: Express server exposing Anthropic-compatible endpoints (`/v1/messages`, `/v1/models`, `/health`, `/account-limits`) and mounting WebUI
+- **src/webui/index.js**: WebUI backend handling API routes (`/api/*`) for config, accounts, and logs
 - **src/cloudcode/**: Cloud Code API client with retry/failover logic, streaming and non-streaming support
+  - `model-api.js`: Model listing, quota retrieval (`getModelQuotas()`), and subscription tier detection (`getSubscriptionTier()`)
 - **src/account-manager/**: Multi-account pool with sticky selection, rate limit handling, and automatic cooldown
 - **src/auth/**: Authentication including Google OAuth, token extraction, database access, and auto-rebuild of native modules
 - **src/format/**: Format conversion between Anthropic and Google Generative AI formats
 - **src/constants.js**: API endpoints, model mappings, fallback config, OAuth config, and all configuration values
+- **src/modules/usage-stats.js**: Tracks request volume by model/family, persists 30-day history to JSON, and auto-prunes old data.
 - **src/fallback-config.js**: Model fallback mappings (`getFallbackModel()`, `hasFallback()`)
 - **src/errors.js**: Custom error classes (`RateLimitError`, `AuthError`, `ApiError`, etc.)
 
@@ -122,6 +176,17 @@ src/
 - Automatic switch only when rate-limited for > 2 minutes on the current model
 - Session ID derived from first user message hash for cache continuity
 - Account state persisted to `~/.config/antigravity-proxy/accounts.json`
+
+**Account Data Model:**
+Each account object in `accounts.json` contains:
+- **Basic Info**: `email`, `source` (oauth/manual/database), `enabled`, `lastUsed`
+- **Credentials**: `refreshToken` (OAuth) or `apiKey` (manual)
+- **Subscription**: `{ tier, projectId, detectedAt }` - automatically detected via `loadCodeAssist` API
+  - `tier`: 'free' | 'pro' | 'ultra' (detected from `paidTier` or `currentTier`)
+- **Quota**: `{ models: {}, lastChecked }` - model-specific quota cache
+  - `models[modelId]`: `{ remainingFraction, resetTime }` from `fetchAvailableModels` API
+- **Rate Limits**: `modelRateLimits[modelId]` - temporary rate limit state (in-memory during runtime)
+- **Validity**: `isInvalid`, `invalidReason` - tracks accounts needing re-authentication
 
 **Prompt Caching:**
 - Cache is organization-scoped (requires same account + session ID)
@@ -151,6 +216,34 @@ src/
 - On detection, it attempts to rebuild the module using `npm rebuild`
 - If rebuild succeeds, the module is reloaded; if reload fails, a server restart is required
 - Implementation in `src/utils/native-module-helper.js` and lazy loading in `src/auth/database.js`
+
+**Web Management UI:**
+
+- **Stack**: Vanilla JS + Alpine.js + Tailwind CSS (local build with PostCSS)
+- **Build System**:
+  - Tailwind CLI with JIT compilation
+  - PostCSS + Autoprefixer
+  - DaisyUI component library
+  - Custom `@apply` directives in `public/css/src/input.css`
+  - Compiled output: `public/css/style.css` (auto-generated on `npm install`)
+- **Architecture**: Single Page Application (SPA) with dynamic view loading
+- **State Management**:
+  - Alpine.store for global state (accounts, settings, logs)
+  - Layered architecture: Service Layer (`account-actions.js`) → Component Layer → UI
+- **Features**:
+  - Real-time dashboard with Chart.js visualization and subscription tier distribution
+  - Account list with tier badges (Ultra/Pro/Free) and quota progress bars
+  - OAuth flow handling via popup window
+  - Live log streaming via Server-Sent Events (SSE)
+  - Config editor for both Proxy and Claude CLI (`~/.claude/settings.json`)
+  - Skeleton loading screens for improved perceived performance
+  - Empty state UX with actionable prompts
+  - Loading states for all async operations
+- **Accessibility**:
+  - ARIA labels on search inputs and icon buttons
+  - Keyboard navigation support (Escape to clear search)
+- **Security**: Optional password protection via `WEBUI_PASSWORD` env var
+- **Smart Refresh**: Client-side polling with ±20% jitter and tab visibility detection (3x slower when hidden)
 
 ## Testing Notes
 
@@ -186,6 +279,12 @@ src/
 - `sleep(ms)` - Promise-based delay
 - `isNetworkError(error)` - Check if error is a transient network error
 
+**Data Persistence:**
+- Subscription and quota data are automatically fetched when `/account-limits` is called
+- Updated data is saved to `accounts.json` asynchronously (non-blocking)
+- On server restart, accounts load with last known subscription/quota state
+- Quota is refreshed on each WebUI poll (default: 30s with jitter)
+
 **Logger:** Structured logging via `src/utils/logger.js`:
 - `logger.info(msg)` - Standard info (blue)
 - `logger.success(msg)` - Success messages (green)
@@ -194,6 +293,116 @@ src/
 - `logger.debug(msg)` - Debug output (magenta, only when enabled)
 - `logger.setDebug(true)` - Enable debug mode
 - `logger.isDebugEnabled` - Check if debug mode is on
+
+**WebUI APIs:**
+
+- `/api/accounts/*` - Account management (list, add, remove, refresh)
+- `/api/config/*` - Server configuration (read/write)
+- `/api/claude/config` - Claude CLI settings
+- `/api/logs/stream` - SSE endpoint for real-time logs
+- `/api/stats/history` - Retrieve 30-day request history (sorted chronologically)
+- `/api/auth/url` - Generate Google OAuth URL
+- `/account-limits` - Fetch account quotas and subscription data
+  - Returns: `{ accounts: [{ email, subscription: { tier, projectId }, limits: {...} }], models: [...] }`
+  - Query params: `?format=table` (ASCII table) or `?includeHistory=true` (adds usage stats)
+
+## Frontend Development
+
+### CSS Build System
+
+**Workflow:**
+1. Edit styles in `public/css/src/input.css` (Tailwind source with `@apply` directives)
+2. Run `npm run build:css` to compile (or `npm run watch:css` for auto-rebuild)
+3. Compiled CSS output: `public/css/style.css` (minified, committed to git)
+
+**Component Styles:**
+- Use `@apply` to abstract common Tailwind patterns into reusable classes
+- Example: `.btn-action-ghost`, `.status-pill-success`, `.input-search`
+- Skeleton loading: `.skeleton`, `.skeleton-stat-card`, `.skeleton-chart`
+
+**When to rebuild:**
+- After modifying `public/css/src/input.css`
+- After pulling changes that updated CSS source
+- Automatically on `npm install` (via `prepare` hook)
+
+### Error Handling Pattern
+
+Use `window.ErrorHandler.withLoading()` for async operations:
+
+```javascript
+async myOperation() {
+  return await window.ErrorHandler.withLoading(async () => {
+    // Your async code here
+    const result = await someApiCall();
+    if (!result.ok) {
+      throw new Error('Operation failed');
+    }
+    return result;
+  }, this, 'loading', { errorMessage: 'Failed to complete operation' });
+}
+```
+
+- Automatically manages `this.loading` state
+- Shows error toast on failure
+- Always resets loading state in `finally` block
+
+### Frontend Configuration
+
+**Constants**:
+All frontend magic numbers and configuration values are centralized in `public/js/config/constants.js`. Use `window.AppConstants` to access:
+- `INTERVALS`: Refresh rates and timeouts
+- `LIMITS`: Data quotas and display limits
+- `UI`: Animation durations and delay settings
+
+### Account Operations Service Layer
+
+Use `window.AccountActions` for account operations instead of direct API calls:
+
+```javascript
+// ✅ Good: Use service layer
+const result = await window.AccountActions.refreshAccount(email);
+if (result.success) {
+  this.$store.global.showToast('Account refreshed', 'success');
+} else {
+  this.$store.global.showToast(result.error, 'error');
+}
+
+// ❌ Bad: Direct API call in component
+const response = await fetch(`/api/accounts/${email}/refresh`);
+```
+
+**Available methods:**
+- `refreshAccount(email)` - Refresh token and quota
+- `toggleAccount(email, enabled)` - Enable/disable account (with optimistic update)
+- `deleteAccount(email)` - Delete account
+- `getFixAccountUrl(email)` - Get OAuth re-auth URL
+- `reloadAccounts()` - Reload from disk
+- `canDelete(account)` - Check if account is deletable
+
+All methods return `{success: boolean, data?: object, error?: string}`
+
+### Dashboard Modules
+
+Dashboard is split into three modules for maintainability:
+
+1. **stats.js** - Account statistics calculation
+   - `updateStats(component)` - Computes active/limited/total counts
+   - Updates subscription tier distribution
+
+2. **charts.js** - Chart.js visualizations
+   - `initQuotaChart(component)` - Initialize quota distribution pie chart
+   - `initTrendChart(component)` - Initialize usage trend line chart
+   - `updateQuotaChart(component)` - Update quota chart data
+   - `updateTrendChart(component)` - Update trend chart (with concurrency lock)
+
+3. **filters.js** - Filter state management
+   - `getInitialState()` - Default filter values
+   - `loadPreferences(component)` - Load from localStorage
+   - `savePreferences(component)` - Save to localStorage
+   - `autoSelectTopN(component)` - Smart select top 5 active models
+   - Filter types: time range (1h/6h/24h/7d/all), display mode, family/model selection
+
+Each module is well-documented with JSDoc comments.
 
 ## Maintenance
 

@@ -43,6 +43,22 @@ export function hasGeminiHistory(messages) {
 }
 
 /**
+ * Check if conversation has unsigned thinking blocks that will be dropped.
+ * These cause "Expected thinking but found text" errors.
+ * @param {Array<Object>} messages - Array of messages
+ * @returns {boolean} True if any assistant message has unsigned thinking blocks
+ */
+export function hasUnsignedThinkingBlocks(messages) {
+    return messages.some(msg => {
+        if (msg.role !== 'assistant' && msg.role !== 'model') return false;
+        if (!Array.isArray(msg.content)) return false;
+        return msg.content.some(block =>
+            isThinkingPart(block) && !hasValidSignature(block)
+        );
+    });
+}
+
+/**
  * Sanitize a thinking part by keeping only allowed fields
  */
 export function sanitizeThinkingPart(part) {

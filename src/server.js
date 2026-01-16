@@ -6,12 +6,21 @@
 
 import express from 'express';
 import cors from 'cors';
-import { sendMessage, sendMessageStream, listModels, getModelQuotas } from './cloudcode/index.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { sendMessage, sendMessageStream, listModels, getModelQuotas, getSubscriptionTier } from './cloudcode/index.js';
+import { mountWebUI } from './webui/index.js';
+import { config } from './config.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import { forceRefresh } from './auth/token-extractor.js';
 import { REQUEST_BODY_LIMIT } from './constants.js';
 import { AccountManager } from './account-manager/index.js';
+import { clearThinkingSignatureCache } from './format/signature-cache.js';
 import { formatDuration } from './utils/helpers.js';
 import { logger } from './utils/logger.js';
+import usageStats from './modules/usage-stats.js';
 
 // Parse fallback flag directly from command line args to avoid circular dependency
 const args = process.argv.slice(2);
@@ -56,6 +65,43 @@ async function ensureInitialized() {
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
+
+// API Key authentication middleware for /v1/* endpoints
+app.use('/v1', (req, res, next) => {
+    // Skip validation if apiKey is not configured
+    if (!config.apiKey) {
+        return next();
+    }
+
+    const authHeader = req.headers['authorization'];
+    const xApiKey = req.headers['x-api-key'];
+
+    let providedKey = '';
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        providedKey = authHeader.substring(7);
+    } else if (xApiKey) {
+        providedKey = xApiKey;
+    }
+
+    if (!providedKey || providedKey !== config.apiKey) {
+        logger.warn(`[API] Unauthorized request from ${req.ip}, invalid API key`);
+        return res.status(401).json({
+            type: 'error',
+            error: {
+                type: 'authentication_error',
+                message: 'Invalid or missing API key'
+            }
+        });
+    }
+
+    next();
+});
+
+// Setup usage statistics middleware
+usageStats.setupMiddleware(app);
+
+// Mount WebUI (optional web interface for account management)
+mountWebUI(app, __dirname, accountManager);
 
 /**
  * Parse error message to extract error type, status code, and user-friendly message
@@ -116,6 +162,16 @@ app.use((req, res, next) => {
 });
 
 /**
+ * Test endpoint - Clear thinking signature cache
+ * Used for testing cold cache scenarios in cross-model tests
+ */
+app.post('/test/clear-signature-cache', (req, res) => {
+    clearThinkingSignatureCache();
+    logger.debug('[Test] Cleared thinking signature cache');
+    res.json({ success: true, message: 'Thinking signature cache cleared' });
+});
+
+/**
  * Health check endpoint - Detailed status
  * Returns status of all accounts including rate limits and model quotas
  */
@@ -123,11 +179,11 @@ app.get('/health', async (req, res) => {
     try {
         await ensureInitialized();
         const start = Date.now();
-        
+
         // Get high-level status first
         const status = accountManager.getStatus();
         const allAccounts = accountManager.getAllAccounts();
-        
+
         // Fetch quotas for each account in parallel to get detailed model info
         const accountDetails = await Promise.allSettled(
             allAccounts.map(async (account) => {
@@ -158,7 +214,8 @@ app.get('/health', async (req, res) => {
 
                 try {
                     const token = await accountManager.getTokenForAccount(account);
-                    const quotas = await getModelQuotas(token);
+                    const projectId = account.subscription?.projectId || null;
+                    const quotas = await getModelQuotas(token, projectId);
 
                     // Format quotas for readability
                     const formattedQuotas = {};
@@ -235,6 +292,7 @@ app.get('/account-limits', async (req, res) => {
         await ensureInitialized();
         const allAccounts = accountManager.getAllAccounts();
         const format = req.query.format || 'json';
+        const includeHistory = req.query.includeHistory === 'true';
 
         // Fetch quotas for each account in parallel
         const results = await Promise.allSettled(
@@ -251,11 +309,33 @@ app.get('/account-limits', async (req, res) => {
 
                 try {
                     const token = await accountManager.getTokenForAccount(account);
-                    const quotas = await getModelQuotas(token);
+
+                    // Fetch subscription tier first to get project ID
+                    const subscription = await getSubscriptionTier(token);
+
+                    // Then fetch quotas with project ID for accurate quota info
+                    const quotas = await getModelQuotas(token, subscription.projectId);
+
+                    // Update account object with fresh data
+                    account.subscription = {
+                        tier: subscription.tier,
+                        projectId: subscription.projectId,
+                        detectedAt: Date.now()
+                    };
+                    account.quota = {
+                        models: quotas,
+                        lastChecked: Date.now()
+                    };
+
+                    // Save updated account data to disk (async, don't wait)
+                    accountManager.saveToDisk().catch(err => {
+                        logger.error('[Server] Failed to save account data:', err);
+                    });
 
                     return {
                         email: account.email,
                         status: 'ok',
+                        subscription: account.subscription,
                         models: quotas
                     };
                 } catch (error) {
@@ -263,6 +343,7 @@ app.get('/account-limits', async (req, res) => {
                         email: account.email,
                         status: 'error',
                         error: error.message,
+                        subscription: account.subscription || { tier: 'unknown', projectId: null },
                         models: {}
                     };
                 }
@@ -422,32 +503,61 @@ app.get('/account-limits', async (req, res) => {
             return res.send(lines.join('\n'));
         }
 
-        // Default: JSON format
-        res.json({
+        // Get account metadata from AccountManager
+        const accountStatus = accountManager.getStatus();
+        const accountMetadataMap = new Map(
+            accountStatus.accounts.map(a => [a.email, a])
+        );
+
+        // Build response data
+        const responseData = {
             timestamp: new Date().toLocaleString(),
             totalAccounts: allAccounts.length,
             models: sortedModels,
-            accounts: accountLimits.map(acc => ({
-                email: acc.email,
-                status: acc.status,
-                error: acc.error || null,
-                limits: Object.fromEntries(
-                    sortedModels.map(modelId => {
-                        const quota = acc.models?.[modelId];
-                        if (!quota) {
-                            return [modelId, null];
-                        }
-                        return [modelId, {
-                            remaining: quota.remainingFraction !== null
-                                ? `${Math.round(quota.remainingFraction * 100)}%`
-                                : 'N/A',
-                            remainingFraction: quota.remainingFraction,
-                            resetTime: quota.resetTime || null
-                        }];
-                    })
-                )
-            }))
-        });
+            modelConfig: config.modelMapping || {},
+            accounts: accountLimits.map(acc => {
+                // Merge quota data with account metadata
+                const metadata = accountMetadataMap.get(acc.email) || {};
+                return {
+                    email: acc.email,
+                    status: acc.status,
+                    error: acc.error || null,
+                    // Include metadata from AccountManager (WebUI needs these)
+                    source: metadata.source || 'unknown',
+                    enabled: metadata.enabled !== false,
+                    projectId: metadata.projectId || null,
+                    isInvalid: metadata.isInvalid || false,
+                    invalidReason: metadata.invalidReason || null,
+                    lastUsed: metadata.lastUsed || null,
+                    modelRateLimits: metadata.modelRateLimits || {},
+                    // Subscription data (new)
+                    subscription: acc.subscription || metadata.subscription || { tier: 'unknown', projectId: null },
+                    // Quota limits
+                    limits: Object.fromEntries(
+                        sortedModels.map(modelId => {
+                            const quota = acc.models?.[modelId];
+                            if (!quota) {
+                                return [modelId, null];
+                            }
+                            return [modelId, {
+                                remaining: quota.remainingFraction !== null
+                                    ? `${Math.round(quota.remainingFraction * 100)}%`
+                                    : 'N/A',
+                                remainingFraction: quota.remainingFraction,
+                                resetTime: quota.resetTime || null
+                            }];
+                        })
+                    )
+                };
+            })
+        };
+
+        // Optionally include usage history (for dashboard performance optimization)
+        if (includeHistory) {
+            responseData.history = usageStats.getHistory();
+        }
+
+        res.json(responseData);
     } catch (error) {
         res.status(500).json({
             status: 'error',
@@ -512,7 +622,8 @@ app.get('/v1/models', async (req, res) => {
 });
 
 /**
- * Count tokens endpoint (not supported)
+ * Count tokens endpoint - Anthropic Messages API compatible
+ * Uses local tokenization with official tokenizers (@anthropic-ai/tokenizer for Claude, @lenml/tokenizer-gemini for Gemini)
  */
 app.post('/v1/messages/count_tokens', (req, res) => {
     res.status(501).json({
@@ -538,13 +649,12 @@ app.post('/v1/messages', async (req, res) => {
         // Ensure account manager is initialized
         await ensureInitialized();
 
-
         const {
             model,
             messages,
-            max_tokens,
             stream,
             system,
+            max_tokens,
             tools,
             tool_choice,
             thinking,
@@ -553,9 +663,19 @@ app.post('/v1/messages', async (req, res) => {
             temperature
         } = req.body;
 
+        // Resolve model mapping if configured
+        let requestedModel = model || 'claude-3-5-sonnet-20241022';
+        const modelMapping = config.modelMapping || {};
+        if (modelMapping[requestedModel] && modelMapping[requestedModel].mapping) {
+            const targetModel = modelMapping[requestedModel].mapping;
+            logger.info(`[Server] Mapping model ${requestedModel} -> ${targetModel}`);
+            requestedModel = targetModel;
+        }
+
+        const modelId = requestedModel;
+
         // Optimistic Retry: If ALL accounts are rate-limited for this model, reset them to force a fresh check.
         // If we have some available accounts, we try them first.
-        const modelId = model || 'claude-3-5-sonnet-20241022';
         if (accountManager.isAllRateLimited(modelId)) {
             logger.warn(`[Server] All accounts rate-limited for ${modelId}. Resetting state for optimistic retry.`);
             accountManager.resetAllRateLimits();
@@ -574,7 +694,7 @@ app.post('/v1/messages', async (req, res) => {
 
         // Build the request object
         const request = {
-            model: model || 'claude-3-5-sonnet-20241022',
+            model: modelId,
             messages,
             max_tokens: max_tokens || 4096,
             stream,
@@ -680,6 +800,8 @@ app.post('/v1/messages', async (req, res) => {
 /**
  * Catch-all for unsupported endpoints
  */
+usageStats.setupRoutes(app);
+
 app.use('*', (req, res) => {
     if (logger.isDebugEnabled) {
         logger.debug(`[API] 404 Not Found: ${req.method} ${req.originalUrl}`);

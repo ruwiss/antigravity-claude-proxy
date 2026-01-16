@@ -19,6 +19,9 @@ import { clearExpiredLimits, getAvailableAccounts } from './rate-limits.js';
 function isAccountUsable(account, modelId) {
     if (!account || account.isInvalid) return false;
 
+    // WebUI: Skip disabled accounts
+    if (account.enabled === false) return false;
+
     if (modelId && account.modelRateLimits && account.modelRateLimits[modelId]) {
         const limit = account.modelRateLimits[modelId];
         if (limit.isRateLimited && limit.resetTime > Date.now()) {

@@ -565,15 +565,36 @@ export function sanitizeSchema(schema) {
 }
 
 /**
+ * Convert JSON Schema type names to Google's Protobuf-style uppercase type names.
+ * Google's Generative AI API expects uppercase types: STRING, OBJECT, ARRAY, etc.
+ *
+ * @param {string} type - JSON Schema type name (lowercase)
+ * @returns {string} Google-format type name (uppercase)
+ */
+function toGoogleType(type) {
+    if (!type || typeof type !== 'string') return type;
+    const typeMap = {
+        'string': 'STRING',
+        'number': 'NUMBER',
+        'integer': 'INTEGER',
+        'boolean': 'BOOLEAN',
+        'array': 'ARRAY',
+        'object': 'OBJECT',
+        'null': 'STRING'  // Fallback for null type
+    };
+    return typeMap[type.toLowerCase()] || type.toUpperCase();
+}
+
+/**
  * Cleans JSON schema for Gemini API compatibility.
  * Uses a multi-phase pipeline matching opencode-antigravity-auth approach.
  *
  * @param {Object} schema - The JSON schema to clean
  * @returns {Object} Cleaned schema safe for Gemini API
  */
-export function cleanSchemaForGemini(schema) {
+export function cleanSchema(schema) {
     if (!schema || typeof schema !== 'object') return schema;
-    if (Array.isArray(schema)) return schema.map(cleanSchemaForGemini);
+    if (Array.isArray(schema)) return schema.map(cleanSchema);
 
     // Phase 1: Convert $refs to hints
     let result = convertRefsToHints(schema);
@@ -620,16 +641,16 @@ export function cleanSchemaForGemini(schema) {
     if (result.properties && typeof result.properties === 'object') {
         const newProps = {};
         for (const [key, value] of Object.entries(result.properties)) {
-            newProps[key] = cleanSchemaForGemini(value);
+            newProps[key] = cleanSchema(value);
         }
         result.properties = newProps;
     }
 
     if (result.items) {
         if (Array.isArray(result.items)) {
-            result.items = result.items.map(cleanSchemaForGemini);
+            result.items = result.items.map(cleanSchema);
         } else if (typeof result.items === 'object') {
-            result.items = cleanSchemaForGemini(result.items);
+            result.items = cleanSchema(result.items);
         }
     }
 
@@ -640,6 +661,12 @@ export function cleanSchemaForGemini(schema) {
         if (result.required.length === 0) {
             delete result.required;
         }
+    }
+
+    // Phase 5: Convert type to Google's uppercase format (STRING, OBJECT, ARRAY, etc.)
+    // Only convert at current level - nested types already converted by recursive cleanSchema calls
+    if (result.type && typeof result.type === 'string') {
+        result.type = toGoogleType(result.type);
     }
 
     return result;

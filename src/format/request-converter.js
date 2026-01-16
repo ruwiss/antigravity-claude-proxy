@@ -9,13 +9,14 @@ import {
     isThinkingModel
 } from '../constants.js';
 import { convertContentToParts, convertRole } from './content-converter.js';
-import { sanitizeSchema, cleanSchemaForGemini } from './schema-sanitizer.js';
+import { sanitizeSchema, cleanSchema } from './schema-sanitizer.js';
 import {
     restoreThinkingSignatures,
     removeTrailingThinkingBlocks,
     reorderAssistantContent,
     filterUnsignedThinkingBlocks,
     hasGeminiHistory,
+    hasUnsignedThinkingBlocks,
     needsThinkingRecovery,
     closeToolLoopForThinking
 } from './thinking-utils.js';
@@ -87,16 +88,16 @@ export function convertAnthropicToGoogle(anthropicRequest) {
         processedMessages = closeToolLoopForThinking(messages, 'gemini');
     }
 
-    // For Claude: apply recovery only for cross-model (Gemini→Claude) switch
-    // Detected by checking if history has Gemini-style tool_use with thoughtSignature
-    if (isClaudeModel && isThinking && hasGeminiHistory(messages) && needsThinkingRecovery(messages)) {
-        logger.debug('[RequestConverter] Applying thinking recovery for Claude (cross-model from Gemini)');
+    // For Claude: apply recovery for cross-model (Gemini→Claude) or unsigned thinking blocks
+    // Unsigned thinking blocks occur when Claude Code strips signatures it doesn't understand
+    const needsClaudeRecovery = hasGeminiHistory(messages) || hasUnsignedThinkingBlocks(messages);
+    if (isClaudeModel && isThinking && needsClaudeRecovery && needsThinkingRecovery(messages)) {
+        logger.debug('[RequestConverter] Applying thinking recovery for Claude');
         processedMessages = closeToolLoopForThinking(messages, 'claude');
     }
 
     // Convert messages to contents, then filter unsigned thinking blocks
-    for (let i = 0; i < processedMessages.length; i++) {
-        const msg = processedMessages[i];
+    for (const msg of processedMessages) {
         let msgContent = msg.content;
 
         // For assistant messages, process thinking blocks and reorder content
@@ -210,10 +211,11 @@ export function convertAnthropicToGoogle(anthropicRequest) {
             // Sanitize schema for general compatibility
             let parameters = sanitizeSchema(schema);
 
-            // For Gemini models, apply additional cleaning for VALIDATED mode
-            if (isGeminiModel) {
-                parameters = cleanSchemaForGemini(parameters);
-            }
+            // Apply Google-format cleaning for ALL models since they all go through
+            // Cloud Code API which validates schemas using Google's protobuf format.
+            // This fixes issue #82: /compact command fails with schema transformation error
+            // "Proto field is not repeating, cannot start list" for Claude models.
+            parameters = cleanSchema(parameters);
 
             return {
                 name: String(name).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64),

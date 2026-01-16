@@ -16,6 +16,10 @@ log.txt
 
 # Local config (may contain tokens)
 .claude/
+.deepvcode/
+
+# Runtime data
+data/
 
 # Test artifacts
 tests/utils/*.png
