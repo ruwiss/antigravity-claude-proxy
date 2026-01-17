@@ -147,8 +147,6 @@ Add this configuration:
 ```json
 {
   "env": {
-    "ANTHROPIC_AUTH_TOKEN": "test",
-    "ANTHROPIC_BASE_URL": "http://localhost:8080",
     "ANTHROPIC_MODEL": "claude-opus-4-5-thinking",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-5-thinking",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-5-thinking",
@@ -166,8 +164,6 @@ Or to use Gemini models:
 ```json
 {
   "env": {
-    "ANTHROPIC_AUTH_TOKEN": "test",
-    "ANTHROPIC_BASE_URL": "http://localhost:8080",
     "ANTHROPIC_MODEL": "gemini-3-pro-high[1m]",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "gemini-3-pro-high[1m]",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "gemini-3-flash[1m]",
