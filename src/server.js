@@ -10,6 +10,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { sendMessage, sendMessageStream, listModels, getModelQuotas, getSubscriptionTier } from './cloudcode/index.js';
 import { mountWebUI } from './webui/index.js';
+import { startKiroServer } from './kiro/index.js';
 import { config } from './config.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -103,6 +104,9 @@ usageStats.setupMiddleware(app);
 // Mount WebUI (optional web interface for account management)
 mountWebUI(app, __dirname, accountManager);
 
+// Start Kiro dedicated server (AWS CodeWhisperer compatibility)
+startKiroServer(accountManager, FALLBACK_ENABLED, ensureInitialized);
+
 /**
  * Parse error message to extract error type, status code, and user-friendly message
  */
@@ -153,7 +157,7 @@ app.use((req, res, next) => {
     // Skip logging for event logging batch unless in debug mode
     if (req.path === '/api/event_logging/batch') {
         if (logger.isDebugEnabled) {
-             logger.debug(`[${req.method}] ${req.path}`);
+            logger.debug(`[${req.method}] ${req.path}`);
         }
     } else {
         logger.info(`[${req.method}] ${req.path}`);

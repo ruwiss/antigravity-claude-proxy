@@ -235,8 +235,21 @@ export function convertAnthropicToGoogle(anthropicRequest) {
                     mode: 'VALIDATED'
                 }
             };
+        } else if (isGeminiModel) {
+            // Enable streaming for tool arguments (Gemini 3+)
+            // This prevents atomic/buffered tool calls
+            googleRequest.toolConfig = {
+                functionCallingConfig: {
+                    mode: 'AUTO',
+                    streamFunctionCallArguments: true,
+                    // Try snake_case just in case the API expects it (undocumented behavior)
+                    stream_function_call_arguments: true
+                }
+            };
         }
     }
+
+    // Cap max tokens for Gemini models
 
     // Cap max tokens for Gemini models
     if (isGeminiModel && googleRequest.generationConfig.maxOutputTokens > GEMINI_MAX_OUTPUT_TOKENS) {
