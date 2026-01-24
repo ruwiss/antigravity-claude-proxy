@@ -93,7 +93,14 @@ function loadConfig() {
 loadConfig();
 
 export function getPublicConfig() {
-    return { ...config };
+    // Create a deep copy and redact sensitive fields
+    const publicConfig = JSON.parse(JSON.stringify(config));
+
+    // Redact sensitive values
+    if (publicConfig.webuiPassword) publicConfig.webuiPassword = '********';
+    if (publicConfig.apiKey) publicConfig.apiKey = '********';
+
+    return publicConfig;
 }
 
 export function saveConfig(updates) {

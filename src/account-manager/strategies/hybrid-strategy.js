@@ -68,8 +68,10 @@ export class HybridStrategy extends BaseStrategy {
         const candidates = this.#getCandidates(accounts, modelId);
 
         if (candidates.length === 0) {
-            logger.debug('[HybridStrategy] No candidates available');
-            return { account: null, index: 0, waitMs: 0 };
+            // Diagnose why no candidates are available and compute wait time
+            const { reason, waitMs } = this.#diagnoseNoCandidates(accounts, modelId);
+            logger.warn(`[HybridStrategy] No candidates available: ${reason}`);
+            return { account: null, index: 0, waitMs };
         }
 
         // Score and sort candidates
@@ -231,6 +233,58 @@ export class HybridStrategy extends BaseStrategy {
      */
     getQuotaTracker() {
         return this.#quotaTracker;
+    }
+
+    /**
+     * Diagnose why no candidates are available and compute wait time
+     * @private
+     * @param {Array} accounts - Array of account objects
+     * @param {string} modelId - The model ID
+     * @returns {{reason: string, waitMs: number}} Diagnosis result
+     */
+    #diagnoseNoCandidates(accounts, modelId) {
+        let unusableCount = 0;
+        let unhealthyCount = 0;
+        let noTokensCount = 0;
+        let criticalQuotaCount = 0;
+        const accountsWithoutTokens = [];
+
+        for (const account of accounts) {
+            if (!this.isAccountUsable(account, modelId)) {
+                unusableCount++;
+                continue;
+            }
+            if (!this.#healthTracker.isUsable(account.email)) {
+                unhealthyCount++;
+                continue;
+            }
+            if (!this.#tokenBucketTracker.hasTokens(account.email)) {
+                noTokensCount++;
+                accountsWithoutTokens.push(account.email);
+                continue;
+            }
+            if (this.#quotaTracker.isQuotaCritical(account, modelId)) {
+                criticalQuotaCount++;
+                continue;
+            }
+        }
+
+        // If all accounts are blocked by token bucket, calculate wait time
+        if (noTokensCount > 0 && unusableCount === 0 && unhealthyCount === 0) {
+            const waitMs = this.#tokenBucketTracker.getMinTimeUntilToken(accountsWithoutTokens);
+            const reason = `all ${noTokensCount} account(s) exhausted token bucket, waiting for refill`;
+            return { reason, waitMs };
+        }
+
+        // Build reason string
+        const parts = [];
+        if (unusableCount > 0) parts.push(`${unusableCount} unusable/disabled`);
+        if (unhealthyCount > 0) parts.push(`${unhealthyCount} unhealthy`);
+        if (noTokensCount > 0) parts.push(`${noTokensCount} no tokens`);
+        if (criticalQuotaCount > 0) parts.push(`${criticalQuotaCount} critical quota`);
+
+        const reason = parts.length > 0 ? parts.join(', ') : 'unknown';
+        return { reason, waitMs: 0 };
     }
 }
 

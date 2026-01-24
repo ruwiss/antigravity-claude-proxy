@@ -160,6 +160,10 @@ export async function sendMessage(anthropicRequest, accountManager, fallbackEnab
                 logger.warn(`[CloudCode] All ${accountCount} account(s) rate-limited. Waiting ${formatDuration(minWaitMs)}...`);
                 await sleep(minWaitMs + 500); // Add 500ms buffer
                 accountManager.clearExpiredLimits();
+
+                // CRITICAL FIX: Don't count waiting for rate limits as a failed attempt
+                // This prevents "Max retries exceeded" when we are just patiently waiting
+                attempt--;
                 continue; // Retry the loop
             }
 
@@ -174,11 +178,13 @@ export async function sendMessage(anthropicRequest, accountManager, fallbackEnab
         if (!account && waitMs > 0) {
             logger.info(`[CloudCode] Waiting ${formatDuration(waitMs)} for account...`);
             await sleep(waitMs + 500);
+            attempt--; // CRITICAL FIX: Don't count strategy wait as failure
             continue;
         }
 
         if (!account) {
-            continue; // Shouldn't happen, but safety check
+            logger.warn(`[CloudCode] Strategy returned no account for ${model} (attempt ${attempt + 1}/${maxAttempts})`);
+            continue;
         }
 
         try {
