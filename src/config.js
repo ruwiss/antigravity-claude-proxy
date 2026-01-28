@@ -16,6 +16,11 @@ const DEFAULT_CONFIG = {
     defaultCooldownMs: 10000,  // 10 seconds
     maxWaitBeforeErrorMs: 120000, // 2 minutes
     maxAccounts: 10, // Maximum number of accounts allowed
+    // Rate limit handling (matches opencode-antigravity-auth)
+    rateLimitDedupWindowMs: 2000,  // 2 seconds - prevents concurrent retry storms
+    maxConsecutiveFailures: 3,     // Before applying extended cooldown
+    extendedCooldownMs: 60000,     // 1 minute extended cooldown
+    maxCapacityRetries: 5,         // Max retries for capacity exhaustion
     modelMapping: {},
     // Account selection strategy configuration
     accountSelection: {

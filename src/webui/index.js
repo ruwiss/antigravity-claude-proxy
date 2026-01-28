@@ -478,7 +478,7 @@ export function mountWebUI(app, dirname, accountManager) {
    */
   app.post("/api/config", (req, res) => {
     try {
-      const { debug, logLevel, maxRetries, retryBaseMs, retryMaxMs, persistTokenCache, defaultCooldownMs, maxWaitBeforeErrorMs, maxAccounts, accountSelection, rateLimitDedupWindowMs, maxConsecutiveFailures, extendedCooldownMs, capacityRetryDelayMs, maxCapacityRetries } = req.body;
+      const { debug, logLevel, maxRetries, retryBaseMs, retryMaxMs, persistTokenCache, defaultCooldownMs, maxWaitBeforeErrorMs, maxAccounts, accountSelection, rateLimitDedupWindowMs, maxConsecutiveFailures, extendedCooldownMs, maxCapacityRetries } = req.body;
 
       // Only allow updating specific fields (security)
       const updates = {};
@@ -516,15 +516,12 @@ export function mountWebUI(app, dirname, accountManager) {
       if (typeof extendedCooldownMs === "number" && extendedCooldownMs >= 10000 && extendedCooldownMs <= 300000) {
         updates.extendedCooldownMs = extendedCooldownMs;
       }
-      if (typeof capacityRetryDelayMs === "number" && capacityRetryDelayMs >= 500 && capacityRetryDelayMs <= 10000) {
-        updates.capacityRetryDelayMs = capacityRetryDelayMs;
-      }
       if (typeof maxCapacityRetries === "number" && maxCapacityRetries >= 1 && maxCapacityRetries <= 10) {
         updates.maxCapacityRetries = maxCapacityRetries;
       }
       // Account selection strategy validation
       if (accountSelection && typeof accountSelection === "object") {
-        const validStrategies = ["sticky", "round-robin", "hybrid", "silent-failover", "on-demand", "aggressive", "quota-first", "conservative"];
+        const validStrategies = ["sticky", "round-robin", "hybrid"];
         if (accountSelection.strategy && validStrategies.includes(accountSelection.strategy)) {
           updates.accountSelection = {
             ...(config.accountSelection || {}),

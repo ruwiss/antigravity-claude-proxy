@@ -245,8 +245,6 @@ window.translations.en = {
     maxConsecutiveFailuresDesc: "Number of consecutive failures before applying extended cooldown to an account.",
     extendedCooldown: "Extended Cooldown",
     extendedCooldownDesc: "Cooldown duration applied after max consecutive failures reached.",
-    capacityRetryDelay: "Capacity Retry Delay",
-    capacityRetryDelayDesc: "Delay before retrying when model capacity is exhausted (not quota).",
     maxCapacityRetries: "Max Capacity Retries",
     maxCapacityRetriesDesc: "Maximum retries for capacity exhaustion before switching accounts.",
     saveConfigServer: "Save Configuration",

@@ -227,8 +227,6 @@ window.translations.tr = {
     maxConsecutiveFailuresDesc: "Uzatılmış soğuma uygulamadan önce ardışık başarısızlık sayısı.",
     extendedCooldown: "Uzatılmış Soğuma",
     extendedCooldownDesc: "Maks. ardışık başarısızlık sonrası uygulanan soğuma süresi.",
-    capacityRetryDelay: "Kapasite Yeniden Deneme Gecikmesi",
-    capacityRetryDelayDesc: "Model kapasitesi tükendiğinde (kota değil) yeniden denemeden önceki gecikme.",
     maxCapacityRetries: "Maks. Kapasite Yeniden Denemesi",
     maxCapacityRetriesDesc: "Hesap değiştirmeden önce kapasite tükenmesi için maksimum yeniden deneme.",
     saveConfigServer: "Yapılandırmayı Kaydet",

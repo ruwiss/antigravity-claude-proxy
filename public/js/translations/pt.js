@@ -223,8 +223,6 @@ window.translations.pt = {
     maxConsecutiveFailuresDesc: "Número de falhas consecutivas antes de aplicar resfriamento estendido.",
     extendedCooldown: "Resfriamento Estendido",
     extendedCooldownDesc: "Duração do resfriamento aplicado após atingir máx. de falhas consecutivas.",
-    capacityRetryDelay: "Atraso de Retry de Capacidade",
-    capacityRetryDelayDesc: "Atraso antes de tentar novamente quando capacidade do modelo está esgotada (não quota).",
     maxCapacityRetries: "Máx. Retries de Capacidade",
     maxCapacityRetriesDesc: "Máximo de retries para esgotamento de capacidade antes de trocar conta.",
     saveConfigServer: "Salvar Configuração",

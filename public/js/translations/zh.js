@@ -245,8 +245,6 @@ window.translations.zh = {
     maxConsecutiveFailuresDesc: "触发扩展冷却前允许的连续失败次数。",
     extendedCooldown: "扩展冷却时间",
     extendedCooldownDesc: "达到最大连续失败后应用的冷却时长。",
-    capacityRetryDelay: "容量重试延迟",
-    capacityRetryDelayDesc: "模型容量耗尽（非配额）时重试前的延迟。",
     maxCapacityRetries: "最大容量重试次数",
     maxCapacityRetriesDesc: "容量耗尽时在切换账号前的最大重试次数。",
     saveConfigServer: "保存配置",

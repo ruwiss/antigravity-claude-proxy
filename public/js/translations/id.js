@@ -278,8 +278,6 @@ window.translations.id = {
     maxConsecutiveFailuresDesc: "Jumlah kegagalan berturut-turut sebelum menerapkan cooldown diperpanjang.",
     extendedCooldown: "Cooldown Diperpanjang",
     extendedCooldownDesc: "Durasi cooldown setelah mencapai maks. kegagalan berturut-turut.",
-    capacityRetryDelay: "Jeda Retry Kapasitas",
-    capacityRetryDelayDesc: "Jeda sebelum retry saat kapasitas model habis (bukan kuota).",
     maxCapacityRetries: "Maks. Retry Kapasitas",
     maxCapacityRetriesDesc: "Maksimum retry untuk kehabisan kapasitas sebelum ganti akun.",
     saveConfigServer: "Simpan Konfigurasi",
